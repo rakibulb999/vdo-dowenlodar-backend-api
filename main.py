@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 import subprocess
 import uuid
 import os
+import requests
 from typing import Optional
 
 app = FastAPI()
@@ -18,7 +19,6 @@ def download_video(
     video_id = str(uuid.uuid4())
     output_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
 
-    # যদি format_id না পাঠানো হয়, তাহলে default best mp4
     selected_format = format_id if format_id else "best[ext=mp4]"
 
     try:
@@ -29,10 +29,20 @@ def download_video(
             url
         ], check=True)
     except subprocess.CalledProcessError:
-        return {"error": "Download failed"}
+        return JSONResponse(content={"error": "Download failed"}, status_code=500)
 
-    return FileResponse(
-        path=output_path,
-        filename="video.mp4",
-        media_type="video/mp4"
-    )
+    # GoFile এ আপলোড
+    with open(output_path, "rb") as f:
+        response = requests.post("https://store1.gofile.io/uploadFile", files={"file": f})
+
+    if response.status_code != 200:
+        return JSONResponse(content={"error": "Upload failed"}, status_code=500)
+
+    data = response.json()
+    direct_url = data["data"]["downloadPage"]
+    title = os.path.basename(output_path).replace(".mp4", "")
+
+    return {
+        "direct_url": direct_url,
+        "title": title
+    }
